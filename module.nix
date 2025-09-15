@@ -6,26 +6,8 @@
 
 let
   cfg = config.services.zulip;
-  toPythonString = v:
-    with builtins;
-    if isBool v then
-      if v then "True" else "False"
-    else if isString v then
-      "'${replaceStrings [ "'" ]  [ "\\'" ] v}'"
-    else
-      toString v;
-  prod-settings = pkgs.writeText "prod_settings.py" (
-    lib.pipe cfg.settings [
-      (lib.mapAttrsToList (key: val: "${key} = ${toPythonString val}"))
-      (lib.concatStringsSep "\n")
-      (str: ''
-        import ${cfg.package}/zulip/zproject/prod_settings_template.py
-        ${str}
-        ${cfg.extraConfig or ""}
-        ${if cfg.extraConfigFile == null then "" else "import ${cfg.extraConfigFile}"}
-      '')
-    ]
-  );
+
+  format = pkgs.formats.pythonVars { };
 in
 {
   options.services.zulip = {
@@ -39,28 +21,13 @@ in
         Whether to create a PosgreSQL database for Zulip.
       '';
     };
-    extraConfig = lib.mkOption {
-      type = lib.types.lines;
-      default = "";
-      description = "Extra lines to be appended to the the settings.py file.";
-    };
-    extraConfigFile = lib.mkOption {
-      type = lib.types.nullOr lib.types.path;
-      default = null;
-      description = "Python file to be imported in the settings.py file.";
-    };
+
     settings = lib.mkOption {
       description = ''
         Zulip server settings. Read more [here](https://zulip.readthedocs.io/en/latest/subsystems/settings.html).
       '';
       type = lib.types.submodule {
         freeformType =
-          with lib.types;
-          attrsOf (oneOf [
-            bool
-            int
-            str
-          ]);
         options = {
           EXTERNAL_HOST = lib.mkOption {
             type = lib.types.str;
@@ -94,7 +61,9 @@ in
       after = [ "network.target" ] ++ lib.optional cfg.createPostgresqlDatabase "postgresql.service";
       wantedBy = [ "multi-user.target" ];
 
-      script = ''
+      script = let
+        configFile = (format.generate "zulip-prod-settings.py" cfg.settings)
+      in ''
         cp -r "${cfg.package}/env" .
         chmod -R +w .
         mkdir -p etc/zulip
@@ -104,8 +73,8 @@ in
         deploy_type = production
         EOF
 
-        #ln -s ${prod-settings} $out/zproject/prod-settings.py
-    
+        # ln -s ${configFile} $out/zproject/prod-settings.py
+
         # Not for production
         ${cfg.package}/zulip/scripts/setup/generate-self-signed-cert \
           --exists-ok "''${EXTERNAL_HOST:-$(hostname)}"
