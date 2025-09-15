@@ -39,6 +39,9 @@
             { modulesPath, ... }:
             {
               virtualisation.graphics = false;
+              virtualisation.qemu.options = [
+                "-netdev user,id=n0,hostfwd=tcp::8080-:443"
+              ];
               users.extraUsers.root.password = "root";
               services.getty.autologinUser = "root";
               services.zulip = {
