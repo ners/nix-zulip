@@ -297,6 +297,10 @@ let
     ;
     ignoreCollisions = false;
   };
+in
+stdenv.mkDerivation (finalAttrs: {
+  pname = "zulip-server";
+  version = "10.4";
 
   src = fetchFromGitHub {
     owner = "zulip";
@@ -304,12 +308,6 @@ let
     tag = "10.4";
     hash = "sha256-sIfcxEnF8RUluPDljtNY6sU9OFZgCgG431xb8GSZRno=";
   };
-in
-stdenv.mkDerivation (finalAttrs: {
-  pname = "zulip-server";
-  version = "10.4";
-
-  src = src;
 
   pnpmDeps = pnpm.fetchDeps {
     inherit (finalAttrs) pname version src;
@@ -326,7 +324,6 @@ stdenv.mkDerivation (finalAttrs: {
     curl
     jq
     crudini
-    getopt
 
     #build-essential
     libffi # libffi-devel
@@ -397,8 +394,6 @@ stdenv.mkDerivation (finalAttrs: {
       cd "$out"/bin
       ln -s ../zulip/manage.py zulip-manage
       ln -s ../zulip/tools/update-prod-static zulip-update-prod-static
-      ln -s ../zulip/scripts/setup/generate-self-signed-cert zulip-generate-self-signed-cert
-      ln -s ../zulip/scripts/setup/generate_secrets.py zulip-generate-secrets
     )
 
     runHook postInstall
