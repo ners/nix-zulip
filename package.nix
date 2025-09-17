@@ -1,4 +1,5 @@
-{ runCommand
+{ lib
+, runCommand
 , fetchFromGitHub
 , python3
 , writeShellApplication
@@ -33,7 +34,7 @@
 , curl
 , jq
 , crudini
-, getopt
+, util-linux
 , runtimeShell
 , libxcrypt
 }:
@@ -303,53 +304,6 @@ let
     tag = "10.4";
     hash = "sha256-sIfcxEnF8RUluPDljtNY6sU9OFZgCgG431xb8GSZRno=";
   };
-
-  patch = ''
-    cd $out/zulip
-
-    patchShebangs --build $out/zulip
-
-    echo "def setup_path(): pass" > scripts/lib/setup_path.py
-
-    substituteInPlace scripts/setup/generate-self-signed-cert \
-      --replace "/etc" "$out/env/etc" \
-      --replace "if [ \"\$EUID\" -ne 0 ]; then" "if false; then" \
-      --replace "apt-get install -y openssl" ":"
-
-    substituteInPlace scripts/setup/generate_secrets.py \
-      --replace "/etc" "$out/env/etc"
-
-    substituteInPlace zproject/config.py \
-      --replace "/etc" "$out/env/etc"
-    
-    substituteInPlace zproject/configured_settings.py \
-      --replace "from .prod_settings import *" "import sys; sys.path.append(\"/var/lib/zulip\"); from prod_settings import *"
-
-    substituteInPlace zproject/computed_settings.py \
-      --replace "/var" "$out/env/var" \
-      --replace "/home" "$out/env/home"
-    
-    substituteInPlace tools/update-prod-static \
-      --replace "sanity_check.check_venv(__file__)" "" \
-      --replace "setup_node_modules(production=True)" "" \
-    
-    substituteInPlace scripts/lib/zulip_tools.py \
-      --replace "args = [\"sudo\", *sudo_args, \"--\", *args]" "pass" \
-      --replace "/home" "$out/env/home"
-
-    substituteInPlace tools/setup/emoji/build_emoji \
-      --replace "/srv" "$out/env/srv"
-
-    substituteInPlace zerver/lib/compatibility.py \
-      --replace "LAST_SERVER_UPGRADE_TIME = datetime.strptime" "LAST_SERVER_UPGRADE_TIME = timezone_now() or datetime.strptime"
-  '';
-
-  postInstallPatch = ''
-    patchShebangs --host $out/zulip
-
-    substituteInPlace zproject/computed_settings.py \
-      --replace "$out/env" "./env"
-  '';
 in
 stdenv.mkDerivation (finalAttrs: {
   pname = "zulip-server";
@@ -392,28 +346,64 @@ stdenv.mkDerivation (finalAttrs: {
     vips # libvips # libvips-tools
   ];
 
-  installPhase = ''
-    mkdir $out
+  postPatch = ''
+    echo "def setup_path(): pass" > scripts/lib/setup_path.py
 
-    cp -r ${src} $out/zulip
-    chmod -R +w $out/zulip
-    cp -r node_modules $out/zulip
+    substituteInPlace scripts/setup/generate-self-signed-cert \
+      --replace-fail 'getopt' '${lib.getExe' util-linux "getopt"}' \
+      --replace-fail "apt-get install -y openssl" ":" \
+      --replace-fail 'openssl' '${lib.getExe openssl}' \
+      --replace-fail "if [ \"\$EUID\" -ne 0 ]; then" "if false; then"
+
+    substituteInPlace zproject/configured_settings.py \
+      --replace-fail "from .prod_settings import *" "import sys; sys.path.append(\"/var/lib/zulip\"); from prod_settings import *"
+
+    substituteInPlace zproject/computed_settings.py \
+      --replace-fail "/var" "$out/env/var" \
+      --replace-fail "/home" "$out/env/home"
+
+    substituteInPlace tools/update-prod-static \
+      --replace "sanity_check.check_venv(__file__)" "" \
+      --replace "setup_node_modules(production=True)" "" \
+
+    substituteInPlace scripts/lib/zulip_tools.py \
+      --replace "args = [\"sudo\", *sudo_args, \"--\", *args]" "pass" \
+      --replace "/home" "$out/env/home"
+
+    substituteInPlace tools/setup/emoji/build_emoji \
+      --replace "/srv" "$out/env/srv"
+
+    substituteInPlace zerver/lib/compatibility.py \
+      --replace "LAST_SERVER_UPGRADE_TIME = datetime.strptime" "LAST_SERVER_UPGRADE_TIME = timezone_now() or datetime.strptime"
+  '';
+
+  installPhase = ''
+    mkdir "$out"
+
+    cp -r . "$out"/zulip
+    chmod -R +w "$out"/zulip
+    cp -r node_modules "$out"/zulip
 
     mkdir -p $out/env/etc/ssl/private
     mkdir -p $out/env/etc/ssl/certs
     mkdir -p $out/env/etc/zulip
 
-    ${patch}
-
     #mkdir -p prod-static/serve
     #cp -rT prod-static/serve $out/env/home/zulip/prod-static
-
-    ${postInstallPatch}
 
     mkdir -p $out/bin
 
     for script in generate-self-signed-cert generate-secrets update-prod-static manage; do
       cp $out/zulip/scripts/setup/$script $out/bin
     done
+  '';
+
+  postFixup = ''
+    patchShebangs --build "$out/zulip"
+
+    patchShebangs --host "$out/zulip"
+
+    substituteInPlace zproject/computed_settings.py \
+      --replace "$out/env" "./env"
   '';
 })
