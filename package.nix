@@ -354,9 +354,6 @@ stdenv.mkDerivation (finalAttrs: {
       --replace-fail 'openssl' '${lib.getExe openssl}' \
       --replace-fail "if [ \"\$EUID\" -ne 0 ]; then" "if false; then"
 
-    substituteInPlace zproject/configured_settings.py \
-      --replace-fail "from .prod_settings import *" "import sys; sys.path.append(\"/var/lib/zulip\"); from prod_settings import *"
-
     substituteInPlace zproject/computed_settings.py \
       --replace-fail "/var" "$out/env/var" \
       --replace-fail "/home" "$out/env/home"
@@ -388,6 +385,8 @@ stdenv.mkDerivation (finalAttrs: {
     mkdir -p $out/env/etc/ssl/private
     mkdir -p $out/env/etc/ssl/certs
     mkdir -p $out/env/etc/zulip
+
+    mkdir -p "$out"/zulip/zproject/prod_settings
 
     #mkdir -p prod-static/serve
     #cp -rT prod-static/serve $out/env/home/zulip/prod-static
