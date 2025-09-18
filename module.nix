@@ -30,7 +30,7 @@ in
 {
   options.services.zulip = {
     enable = lib.mkEnableOption "zulip";
-    package = lib.mkPackageOption pkgs "zulip" { };
+    package = lib.mkPackageOption pkgs "zulip-server" { };
     createPostgresqlDatabase = lib.mkOption {
       type = lib.types.bool;
       default = true;
