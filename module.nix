@@ -69,7 +69,7 @@ in
       after = [ "network.target" ] ++ lib.optional cfg.createPostgresqlDatabase "postgresql.service";
       wantedBy = [ "multi-user.target" ];
 
-      script = ''
+      preStart = ''
         cp -r "${cfg.package}/env" .
         chmod -R +w .
 
@@ -94,6 +94,8 @@ in
         RestartSec = 3;
         DynamicUser = true;
         WorkingDirectory = "/var/lib/zulip";
+
+        ExecStart = "${pkgs.coreutils}/bin/echo TODO: start the program";
 
         StateDirectory = [ "zulip" ];
         RuntimeDirectory = [ "zulip/zulip-server" ];
