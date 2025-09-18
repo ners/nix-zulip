@@ -70,9 +70,6 @@ in
       wantedBy = [ "multi-user.target" ];
 
       preStart = ''
-        cp -r "${cfg.package}/env" .
-        chmod -R +w .
-
         # Not for production
         /run/zulip/zulip-server/scripts/setup/generate-self-signed-cert \
           --exists-ok "''${EXTERNAL_HOST:-$(hostname)}"
