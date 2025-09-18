@@ -70,8 +70,25 @@ in
       wantedBy = [ "multi-user.target" ];
 
       preStart = ''
-        # TODO do this conditionally, if secrets do not yet exist
-        /run/zulip/zulip-server/scripts/setup/generate_secrets.py --production
+        # TODO: allow generating a zulip-secrets.conf from declarative options instead.
+        # Generate secrets if not exists.
+        if [ ! -f /etc/zulip/zulip-secrets.conf ]; then
+          install -m600 -o zulip -g zulip /dev/null /etc/zulip/zulip-secrets.conf
+          ZULIP_SECRETS_CONTENT=(
+            "[secrets]"
+            "avatar_salt = '$(head /dev/urandom | tr -dc 0-9A-F | head -c 32)'"
+            "rabbitmq_password = '$(head /dev/urandom | tr -dc 0-9A-F | head -c 32)'"
+            "shared_secret = '$(head /dev/urandom | tr -dc 0-9A-F | head -c 32)'"
+            "postgres_password = '$(head /dev/urandom | tr -dc 0-9A-F | head -c 32)'"
+            "secret_key = '$(head /dev/urandom | tr -dc A-Za-z0-9 | head -c 50)'"
+            "camo_key = '$(head /dev/urandom | tr -dc A-Za-z0-9 | head -c 64)'"
+            "memcached_password = '$(head /dev/urandom | tr -dc 0-9A-F | head -c 32)'"
+            "redis_password = '$(head /dev/urandom | tr -dc 0-9A-F | head -c 32)'"
+            "zulip_org_key = '$(head /dev/urandom | tr -dc A-Za-z0-9 | head -c 64)'"
+            "zulip_org_id = '$(cat /proc/sys/kernel/random/uuid)'"
+          )
+          printf "%s\n" "''${ZULIP_SECRETS_CONTENT[@]}" > /etc/zulip/zulip-secrets.conf
+        fi
 
         # TODO do this conditionally if the cache does not yet exist
         python /run/zulip/zulip-server/tools/update-prod-static
