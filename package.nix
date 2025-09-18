@@ -395,8 +395,6 @@ stdenv.mkDerivation (finalAttrs: {
     pushd "$out"/bin
     ln -s ../zulip/manage.py zulip-manage
     ln -s ../zulip/tools/update-prod-static zulip-update-prod-static
-    ln -s ../zulip/scripts/setup/generate-self-signed-cert zulip-generate-self-signed-cert
-    ln -s ../zulip/scripts/setup/generate_secrets.py zulip-generate-secrets
     popd
 
     runHook postInstall
