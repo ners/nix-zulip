@@ -2,39 +2,39 @@
   inputs.nixpkgs.url = "github:nixos/nixpkgs/nixos-unstable";
 
   outputs =
-    { self, nixpkgs }:
+    inputs:
     let
-      inherit (nixpkgs) lib;
-      systems = builtins.attrNames nixpkgs.legacyPackages;
-      forAllSystems = f: lib.genAttrs systems (system: f system nixpkgs.legacyPackages.${system});
+      inherit (inputs.nixpkgs) lib;
+      systems = builtins.attrNames inputs.nixpkgs.legacyPackages;
+      forAllSystems = f: lib.genAttrs systems (system: f system inputs.nixpkgs.legacyPackages.${system});
     in
     {
       packages = forAllSystems (
         system: pkgs: {
-          default = self.packages.${system}.zulip-server;
+          default = inputs.self.packages.${system}.zulip-server;
           zulip-server = pkgs.callPackage ./package.nix { };
-          vm = self.nixosConfigurations.vm.config.system.build.toplevel;
+          vm = inputs.self.nixosConfigurations.vm.config.system.build.toplevel;
         }
       );
 
       overlays.default = final: prev: {
-        inherit (self.packages.${final.system}) zulip-server;
+        inherit (inputs.self.packages.${final.system}) zulip-server;
       };
 
       nixosModules.default = ./module.nix;
 
-      nixosConfigurations.vm = nixpkgs.lib.nixosSystem {
+      nixosConfigurations.vm = inputs.nixpkgs.lib.nixosSystem {
         system = "x86_64-linux";
-        pkgs = import nixpkgs {
+        pkgs = import inputs.nixpkgs {
           system = "x86_64-linux";
           overlays = [
-            self.overlays.default
+            inputs.self.overlays.default
           ];
         };
 
         modules = [
-          "${nixpkgs}/nixos/modules/virtualisation/qemu-vm.nix"
-          self.nixosModules.default
+          "${inputs.nixpkgs}/nixos/modules/virtualisation/qemu-vm.nix"
+          inputs.self.nixosModules.default
           (
             { modulesPath, ... }:
             {
@@ -61,14 +61,14 @@
         system: pkgs: {
           default = {
             type = "app";
-            program = "${self.nixosConfigurations.vm.config.system.build.vm}/bin/run-nixos-vm";
+            program = "${inputs.self.nixosConfigurations.vm.config.system.build.vm}/bin/run-nixos-vm";
           };
         }
       );
 
       checks = forAllSystems (
         system: pkgs: {
-          default = (pkgs.extend self.overlays.default).nixosTest (import ./test.nix);
+          default = (pkgs.extend inputs.self.overlays.default).nixosTest (import ./test.nix);
         }
       );
     };
