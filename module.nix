@@ -70,10 +70,6 @@ in
       wantedBy = [ "multi-user.target" ];
 
       preStart = ''
-        # Not for production
-        /run/zulip/zulip-server/scripts/setup/generate-self-signed-cert \
-          --exists-ok "''${EXTERNAL_HOST:-$(hostname)}"
-
         # TODO do this conditionally, if secrets do not yet exist
         /run/zulip/zulip-server/scripts/setup/generate_secrets.py --production
 
