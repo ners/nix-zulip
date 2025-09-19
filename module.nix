@@ -91,7 +91,7 @@ in
         fi
 
         # TODO do this conditionally if the cache does not yet exist
-        python /run/zulip/zulip-server/tools/update-prod-static
+        /run/zulip/zulip-server/tools/update-prod-static
 
         # TODO should this only run if e.g. ./env does not exist? or maybe we can make a file called .initialised or something 
         PYTHONUNBUFFERED=1 /run/zulip/zulip-server/manage.py register_server
