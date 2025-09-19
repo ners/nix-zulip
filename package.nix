@@ -382,10 +382,6 @@ stdenv.mkDerivation (finalAttrs: {
     chmod -R +w "$out"/zulip
     cp -r node_modules "$out"/zulip
 
-    mkdir -p $out/env/etc/ssl/private
-    mkdir -p $out/env/etc/ssl/certs
-    mkdir -p $out/env/etc/zulip
-
     mkdir -p "$out"/zulip/zproject/prod_settings
 
     #mkdir -p prod-static/serve
