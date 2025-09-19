@@ -375,12 +375,14 @@ let
       substituteInPlace tools/update-prod-static \
         --replace "sanity_check.check_venv(__file__)" "" \
         --replace "setup_node_modules(production=True)" "" \
+        --replace 'run(["./tools/webpack", "--quiet"])' \
+                  "run([os.environ['ZULIP_TOOLS_WEBPACK_REPLACEMENT_SCRIPT'], os.environ['ZULIP_WEB']])"
 
       substituteInPlace tools/setup/emoji/build_emoji \
         --replace 'EMOJI_CACHE_BASE_PATH = "/srv/zulip-emoji-cache"' \
                   "EMOJI_CACHE_BASE_PATH = os.path.join(os.environ['TMP'], 'emoji-cache')" \
         --replace 'TARGET_STATIC_EMOJI = os.path.join(ZULIP_PATH, "static", "generated", "emoji")' \
-                  "TARGET_STATIC_EMOJI = os.environ['ZULIP_TARGET_STATIC_EMOJI']" \
+                  "TARGET_STATIC_EMOJI = os.path.join(os.environ['ZULIP_STATIC_GENERATED'], 'emoji')" \
         --replace 'target_dir = os.path.join(ZULIP_PATH, "web", "generated", subdir)' \
                   "target_dir = os.path.join(os.environ['ZULIP_WEB_GENERATED'], subdir)" \
         --replace 'shutil.copyfile(input_img_file, output_img_file)' ""
@@ -391,17 +393,15 @@ let
 
       substituteInPlace tools/setup/build_pygments_data \
         --replace 'OUT_PATH = os.path.join(ZULIP_PATH, "web", "generated", "pygments_data.json")' \
-                  'OUT_PATH = os.environ["ZULIP_PYGMENTS_DATA"]'
+                  'OUT_PATH = os.path.join(os.environ["ZULIP_WEB_GENERATED"], "pygments_data.json")'
 
       substituteInPlace tools/setup/build_timezone_values \
         --replace 'OUT_PATH = os.path.join(ZULIP_PATH, "web", "generated", "timezones.json")' \
-                  'OUT_PATH = os.environ["ZULIP_TIMEZONE_VALUES"]'
+                  'OUT_PATH = os.path.join(os.environ["ZULIP_WEB_GENERATED"], "timezones.json")'
 
       substituteInPlace tools/setup/generate_landing_page_images.py \
         --replace 'GENERATED_IMAGES_DIR = os.path.join(LANDING_IMAGES_DIR, "generated")' \
                   'GENERATED_IMAGES_DIR = os.environ["ZULIP_GENERATED_IMAGES_DIR"]'
-
-
     '';
 
     installPhase = ''
@@ -452,32 +452,44 @@ let
       runCommandLocal,
       zulip-server,
       vips,
-      nodejs,
-      strace,
+      writeShellScript,
       webpack-cli,
+
+      # nodejs,
+      strace,
     }:
     runCommandLocal "zulip-static-content"
       {
         nativeBuildInputs = [
           vips
-          nodejs
+          # nodejs
           # zulip-server.pnpmDeps.nativeBuildInputs.pnpm
-          webpack-cli
         ];
 
         env = {
           DISABLE_MANDATORY_SECRET_CHECK = "True";
 
-          ZULIP_EMOJI_CACHE_BASE_PATH = "${placeholder "out"}/srv/zulip-emoji-cache";
-          ZULIP_TARGET_STATIC_EMOJI = "${placeholder "out"}/static/generated/emoji";
+          ZULIP_WEB = "${placeholder "out"}/web";
           ZULIP_WEB_GENERATED = "${placeholder "out"}/web/generated";
           ZULIP_STATIC_GENERATED = "${placeholder "out"}/static/generated";
-          ZULIP_PYGMENTS_DATA = "${placeholder "out"}/web/generated/pygments_data.json";
-          ZULIP_TIMEZONE_VALUES = "${placeholder "out"}/web/generated/timezones.json";
           ZULIP_GENERATED_IMAGES_DIR = "${placeholder "out"}/static/images/landing-page/hello/generated";
 
-          BABEL_DISABLE_CACHE = "1";
-          BROWSERSLIST_IGNORE_OLD_DATA = "1";
+          ZULIP_TOOLS_WEBPACK_REPLACEMENT_SCRIPT = writeShellScript "zulip-tools-webpack-replacement-script" ''
+            export BABEL_DISABLE_CACHE=1
+            export BROWSERSLIST_IGNORE_OLD_DATA=1
+
+            cd "$1"
+
+            ${lib.getExe webpack-cli} build ${lib.cli.toGNUCommandLineShell { } {
+              disable-interpret = true;
+              mode = "production";
+              env = "ZULIP_VERSION=${zulip-server.version}";
+              stats = "errors-only";
+            }}
+          '';
+
+          # BABEL_DISABLE_CACHE = "1";
+          # BROWSERSLIST_IGNORE_OLD_DATA = "1";
         };
       }
       ''
@@ -488,8 +500,9 @@ let
         chmod -R +w "$out/"
 
         # ${lib.getExe strace} -f -e trace=file zulip/tools/update-prod-static
-        '${zulip-server}'/zulip/tools/update-prod-static ||:
-        (cd "$out/web" && webpack build --disable-interpret --mode=production --env=ZULIP_VERSION=${zulip-server.version} ||:)
+        '${zulip-server}'/zulip/tools/update-prod-static
+        # (cd "$out"/web && webpack build --disable-interpret --mode=production --env=ZULIP_VERSION=${zulip-server.version})
+        # ls -lah
       ''
   ) { inherit zulip-server; };
 in
