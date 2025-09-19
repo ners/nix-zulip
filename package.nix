@@ -455,16 +455,12 @@ let
       writeShellScript,
       webpack-cli,
 
-      # nodejs,
+      # TODO: remove
       strace,
     }:
     runCommandLocal "zulip-static-content"
       {
-        nativeBuildInputs = [
-          vips
-          # nodejs
-          # zulip-server.pnpmDeps.nativeBuildInputs.pnpm
-        ];
+        nativeBuildInputs = [ vips ];
 
         env = {
           DISABLE_MANDATORY_SECRET_CHECK = "True";
@@ -487,22 +483,17 @@ let
               stats = "errors-only";
             }}
           '';
-
-          # BABEL_DISABLE_CACHE = "1";
-          # BROWSERSLIST_IGNORE_OLD_DATA = "1";
         };
       }
       ''
-        # TODO: can we get away with removing this cp once this builds?
-        # cp -r '${zulip-server}'/zulip .
+        # TODO: does `web,static,node_modules` need to be stored in `$out` or can we create a webpack
+        #       bundle in a tmpdir and then move it to `$out`?
         mkdir -p "$out"
         cp -r '${zulip-server}'/zulip/{web,static,node_modules} "$out/"
         chmod -R +w "$out/"
 
-        # ${lib.getExe strace} -f -e trace=file zulip/tools/update-prod-static
+        # ${lib.getExe strace} -f -e trace=file '${zulip-server}'/zulip/tools/update-prod-static
         '${zulip-server}'/zulip/tools/update-prod-static
-        # (cd "$out"/web && webpack build --disable-interpret --mode=production --env=ZULIP_VERSION=${zulip-server.version})
-        # ls -lah
       ''
   ) { inherit zulip-server; };
 in
