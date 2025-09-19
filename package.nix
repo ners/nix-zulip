@@ -378,9 +378,12 @@ let
 
       substituteInPlace tools/setup/emoji/build_emoji \
         --replace 'EMOJI_CACHE_BASE_PATH = "/srv/zulip-emoji-cache"' \
-                  "EMOJI_CACHE_BASE_PATH = os.environ['ZULIP_EMOJI_CACHE_BASE_PATH']" \
-        --replace 'shutil.copyfile(input_img_file, output_img_file)' "" \
-        --replace 'TARGET_STATIC_EMOJI = ' "sys.exit(0); TARGET_STATIC_EMOJI = "
+                  "EMOJI_CACHE_BASE_PATH = os.path.join(os.environ['TMP'], 'emoji-cache')" \
+        --replace 'TARGET_STATIC_EMOJI = os.path.join(ZULIP_PATH, "static", "generated", "emoji")' \
+                  "TARGET_STATIC_EMOJI = os.environ['ZULIP_TARGET_STATIC_EMOJI']" \
+        --replace 'target_dir = os.path.join(ZULIP_PATH, "web", "generated", subdir)' \
+                  "target_dir = os.path.join(os.environ['ZULIP_WEB_GENERATED'], subdir)" \
+        --replace 'shutil.copyfile(input_img_file, output_img_file)' ""
 
       # substituteInPlace tools/setup/generate_bots_integrations_static_files.py \
       substituteInPlace tools/setup/generate_zulip_bots_static_files.py \
@@ -451,6 +454,7 @@ let
       vips,
       nodejs,
       strace,
+      webpack-cli,
     }:
     runCommandLocal "zulip-static-content"
       {
@@ -458,29 +462,34 @@ let
           vips
           nodejs
           # zulip-server.pnpmDeps.nativeBuildInputs.pnpm
+          webpack-cli
         ];
 
         env = {
           DISABLE_MANDATORY_SECRET_CHECK = "True";
 
           ZULIP_EMOJI_CACHE_BASE_PATH = "${placeholder "out"}/srv/zulip-emoji-cache";
+          ZULIP_TARGET_STATIC_EMOJI = "${placeholder "out"}/static/generated/emoji";
+          ZULIP_WEB_GENERATED = "${placeholder "out"}/web/generated";
           ZULIP_STATIC_GENERATED = "${placeholder "out"}/static/generated";
           ZULIP_PYGMENTS_DATA = "${placeholder "out"}/web/generated/pygments_data.json";
           ZULIP_TIMEZONE_VALUES = "${placeholder "out"}/web/generated/timezones.json";
           ZULIP_GENERATED_IMAGES_DIR = "${placeholder "out"}/static/images/landing-page/hello/generated";
 
           BABEL_DISABLE_CACHE = "1";
+          BROWSERSLIST_IGNORE_OLD_DATA = "1";
         };
       }
       ''
         # TODO: can we get away with removing this cp once this builds?
         # cp -r '${zulip-server}'/zulip .
         mkdir -p "$out"
-        cp -r '${zulip-server}'/zulip/{web,static} "$out/"
+        cp -r '${zulip-server}'/zulip/{web,static,node_modules} "$out/"
         chmod -R +w "$out/"
 
         # ${lib.getExe strace} -f -e trace=file zulip/tools/update-prod-static
-        '${zulip-server}'/zulip/tools/update-prod-static
+        '${zulip-server}'/zulip/tools/update-prod-static ||:
+        (cd "$out/web" && webpack build --disable-interpret --mode=production --env=ZULIP_VERSION=${zulip-server.version} ||:)
       ''
   ) { inherit zulip-server; };
 in
