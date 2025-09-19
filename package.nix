@@ -449,28 +449,35 @@ let
       runCommandLocal,
       zulip-server,
       vips,
+      nodejs,
       strace,
     }:
     runCommandLocal "zulip-static-content"
       {
-        nativeBuildInputs = [ vips ];
+        nativeBuildInputs = [
+          vips
+          nodejs
+          # zulip-server.pnpmDeps.nativeBuildInputs.pnpm
+        ];
 
         env = {
           DISABLE_MANDATORY_SECRET_CHECK = "True";
 
-          ZULIP_EMOJI_CACHE_BASE_PATH = "${placeholder "out"}/cache/emoji";
+          ZULIP_EMOJI_CACHE_BASE_PATH = "${placeholder "out"}/srv/zulip-emoji-cache";
           ZULIP_STATIC_GENERATED = "${placeholder "out"}/static/generated";
           ZULIP_PYGMENTS_DATA = "${placeholder "out"}/web/generated/pygments_data.json";
           ZULIP_TIMEZONE_VALUES = "${placeholder "out"}/web/generated/timezones.json";
           ZULIP_GENERATED_IMAGES_DIR = "${placeholder "out"}/static/images/landing-page/hello/generated";
+
+          BABEL_DISABLE_CACHE = "1";
         };
       }
       ''
         # TODO: can we get away with removing this cp once this builds?
-        cp -r '${zulip-server}'/zulip .
-
-        mkdir -p "$(dirname "$ZULIP_PYGMENTS_DATA")"
-        mkdir -p "$ZULIP_GENERATED_IMAGES_DIR"
+        # cp -r '${zulip-server}'/zulip .
+        mkdir -p "$out"
+        cp -r '${zulip-server}'/zulip/{web,static} "$out/"
+        chmod -R +w "$out/"
 
         # ${lib.getExe strace} -f -e trace=file zulip/tools/update-prod-static
         '${zulip-server}'/zulip/tools/update-prod-static
