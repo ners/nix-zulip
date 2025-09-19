@@ -370,7 +370,9 @@ stdenv.mkDerivation (finalAttrs: {
       --replace "/home" "$out/env/home"
 
     substituteInPlace tools/setup/emoji/build_emoji \
-      --replace "/srv" "$out/env/srv"
+      --replace 'EMOJI_CACHE_BASE_PATH = "/srv/zulip-emoji-cache"' "EMOJI_CACHE_BASE_PATH = os.environ['ZULIP_EMOJI_CACHE_BASE_PATH']" \
+      --replace 'shutil.copyfile(input_img_file, output_img_file)' "" \
+      --replace 'TARGET_STATIC_EMOJI' "os.exit(0); TARGET_STATIC_EMOJI"
 
     substituteInPlace zerver/lib/compatibility.py \
       --replace "LAST_SERVER_UPGRADE_TIME = datetime.strptime" "LAST_SERVER_UPGRADE_TIME = timezone_now() or datetime.strptime"

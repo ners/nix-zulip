@@ -13,6 +13,16 @@
         system: pkgs: {
           default = inputs.self.packages.${system}.zulip-server;
           zulip-server = pkgs.callPackage ./package.nix { };
+
+          # TODO: would it be easier if this was just included in the zulip-server derivation?
+          #       How much data is it, would it be unfair to put it in the binary cache?
+          zulip-emoji-cache = pkgs.callPackage ({ runCommand, zulip-server, vips }: runCommand "zulip-emoji-cache" {
+            env.ZULIP_EMOJI_CACHE_BASE_PATH = "${placeholder "out"}";
+            nativeBuildInputs = [ vips ];
+          } ''
+            "${zulip-server}"/zulip/tools/setup/emoji/build_emoji
+          '') { inherit (inputs.self.packages.${system}) zulip-server; };
+
           vm = inputs.self.nixosConfigurations.vm.config.system.build.toplevel;
         }
       );
