@@ -326,7 +326,6 @@ stdenv.mkDerivation (finalAttrs: {
     curl
     jq
     crudini
-    getopt
 
     #build-essential
     libffi # libffi-devel
