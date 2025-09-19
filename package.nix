@@ -362,21 +362,43 @@ let
         --replace-fail "/var" "$out/env/var" \
         --replace-fail "/home" "$out/env/home"
 
-      substituteInPlace tools/update-prod-static \
-        --replace "sanity_check.check_venv(__file__)" "" \
-        --replace "setup_node_modules(production=True)" "" \
-
       substituteInPlace scripts/lib/zulip_tools.py \
         --replace "args = [\"sudo\", *sudo_args, \"--\", *args]" "pass" \
         --replace "/home" "$out/env/home"
 
-      substituteInPlace tools/setup/emoji/build_emoji \
-        --replace 'EMOJI_CACHE_BASE_PATH = "/srv/zulip-emoji-cache"' "EMOJI_CACHE_BASE_PATH = os.environ['ZULIP_EMOJI_CACHE_BASE_PATH']" \
-        --replace 'shutil.copyfile(input_img_file, output_img_file)' "" \
-        --replace 'TARGET_STATIC_EMOJI' "os.exit(0); TARGET_STATIC_EMOJI"
-
       substituteInPlace zerver/lib/compatibility.py \
         --replace "LAST_SERVER_UPGRADE_TIME = datetime.strptime" "LAST_SERVER_UPGRADE_TIME = timezone_now() or datetime.strptime"
+
+
+      # === Patches for update-prod-static ===
+
+      substituteInPlace tools/update-prod-static \
+        --replace "sanity_check.check_venv(__file__)" "" \
+        --replace "setup_node_modules(production=True)" "" \
+
+      substituteInPlace tools/setup/emoji/build_emoji \
+        --replace 'EMOJI_CACHE_BASE_PATH = "/srv/zulip-emoji-cache"' \
+                  "EMOJI_CACHE_BASE_PATH = os.environ['ZULIP_EMOJI_CACHE_BASE_PATH']" \
+        --replace 'shutil.copyfile(input_img_file, output_img_file)' "" \
+        --replace 'TARGET_STATIC_EMOJI = ' "sys.exit(0); TARGET_STATIC_EMOJI = "
+
+      # substituteInPlace tools/setup/generate_bots_integrations_static_files.py \
+      substituteInPlace tools/setup/generate_zulip_bots_static_files.py \
+        --replace '"static/generated' "f\"{os.environ['ZULIP_STATIC_GENERATED']}"
+
+      substituteInPlace tools/setup/build_pygments_data \
+        --replace 'OUT_PATH = os.path.join(ZULIP_PATH, "web", "generated", "pygments_data.json")' \
+                  'OUT_PATH = os.environ["ZULIP_PYGMENTS_DATA"]'
+
+      substituteInPlace tools/setup/build_timezone_values \
+        --replace 'OUT_PATH = os.path.join(ZULIP_PATH, "web", "generated", "timezones.json")' \
+                  'OUT_PATH = os.environ["ZULIP_TIMEZONE_VALUES"]'
+
+      substituteInPlace tools/setup/generate_landing_page_images.py \
+        --replace 'GENERATED_IMAGES_DIR = os.path.join(LANDING_IMAGES_DIR, "generated")' \
+                  'GENERATED_IMAGES_DIR = os.environ["ZULIP_GENERATED_IMAGES_DIR"]'
+
+
     '';
 
     installPhase = ''
@@ -391,6 +413,8 @@ let
       mkdir -p $out/env/etc/ssl/private
       mkdir -p $out/env/etc/ssl/certs
       mkdir -p $out/env/etc/zulip
+
+      mkdir -p "$out"/zulip/zproject/prod_settings
 
       #mkdir -p prod-static/serve
       #cp -rT prod-static/serve $out/env/home/zulip/prod-static
@@ -422,26 +446,33 @@ let
   #       How much data is it, would it be unfair to put it in the binary cache?
   zulip-static-content = callPackage (
     {
-      runCommand,
+      runCommandLocal,
       zulip-server,
-      util-linux,
       vips,
+      strace,
     }:
-    runCommand "zulip-static-content"
+    runCommandLocal "zulip-static-content"
       {
-        env.ZULIP_EMOJI_CACHE_BASE_PATH = "${placeholder "out"}";
-        nativeBuildInputs = [
-          util-linux
-          vips
-        ];
+        nativeBuildInputs = [ vips ];
 
-        passAsFile = [ "settingsPy" ];
-        settingsPy = ''
+        env = {
+          DISABLE_MANDATORY_SECRET_CHECK = "True";
 
-        '';
+          ZULIP_EMOJI_CACHE_BASE_PATH = "${placeholder "out"}/cache/emoji";
+          ZULIP_STATIC_GENERATED = "${placeholder "out"}/static/generated";
+          ZULIP_PYGMENTS_DATA = "${placeholder "out"}/web/generated/pygments_data.json";
+          ZULIP_TIMEZONE_VALUES = "${placeholder "out"}/web/generated/timezones.json";
+          ZULIP_GENERATED_IMAGES_DIR = "${placeholder "out"}/static/images/landing-page/hello/generated";
+        };
       }
       ''
-        mount --bind -o ro "$settingsPyPath" '${zulip-server}'/zulip/zproject/prod_settings/__init__.py
+        # TODO: can we get away with removing this cp once this builds?
+        cp -r '${zulip-server}'/zulip .
+
+        mkdir -p "$(dirname "$ZULIP_PYGMENTS_DATA")"
+        mkdir -p "$ZULIP_GENERATED_IMAGES_DIR"
+
+        # ${lib.getExe strace} -f -e trace=file zulip/tools/update-prod-static
         '${zulip-server}'/zulip/tools/update-prod-static
       ''
   ) { inherit zulip-server; };
