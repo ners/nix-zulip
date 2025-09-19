@@ -12,6 +12,8 @@ let
       if v then "True" else "False"
     else if isString v then
       "'${replaceStrings [ "'" ]  [ "\\'" ] v}'"
+    else if isList v then
+      "[\n" + (lib.concatMapStringsSep ",\n" (x: "  " + (toPythonString x)) v) + "\n]"
     else
       toString v;
   prod-settings = pkgs.writeText "prod_settings.py" (
@@ -55,12 +57,17 @@ in
       '';
       type = lib.types.submodule {
         freeformType =
-          with lib.types;
-          attrsOf (oneOf [
-            bool
-            int
-            str
-          ]);
+          with lib.types; let
+            atomType = oneOf [
+              bool
+              int
+              str
+            ];
+          in
+            attrsOf (oneOf [
+              atomType
+              (listOf atomType)
+            ]);
         options = {
           EXTERNAL_HOST = lib.mkOption {
             type = lib.types.str;
@@ -71,12 +78,20 @@ in
           ZULIP_SERVICE_PUSH_NOTIFICATIONS = lib.mkOption {
             type = lib.types.bool;
           };
+          AUTHENTICATION_BACKENDS = lib.mkOption {
+            type = lib.types.listOf lib.types.str;
+            default = [ "zproject.backends.EmailAuthBackend" ];
+          };
         };
       };
     };
   };
 
   config = lib.mkIf cfg.enable {
+    services.zulip.settings = {
+      LOCAL_UPLOADS_DIR = "/var/lib/zulip/uploads";
+    };
+
     services.postgresql = lib.mkIf cfg.createPostgresqlDatabase {
       enable = true;
       ensureDatabases = [ "zulip" ];
@@ -128,7 +143,7 @@ in
         DynamicUser = true;
         WorkingDirectory = "/var/lib/zulip";
         # TODO do we need these?
-        StateDirectory = "zulip";
+        StateDirectory = [ "zulip" "zulip/uploads" ];
         RuntimeDirectory = "zulip";
       };
     };
