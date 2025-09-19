@@ -377,6 +377,8 @@ stdenv.mkDerivation (finalAttrs: {
   '';
 
   installPhase = ''
+    runHook preInstall
+
     mkdir "$out"
 
     cp -r . "$out"/zulip
@@ -390,11 +392,15 @@ stdenv.mkDerivation (finalAttrs: {
     #mkdir -p prod-static/serve
     #cp -rT prod-static/serve $out/env/home/zulip/prod-static
 
-    mkdir -p $out/bin
+    mkdir -p "$out"/bin
+    pushd "$out"/bin
+    ln -s ../zulip/manage.py zulip-manage
+    ln -s ../zulip/tools/update-prod-static zulip-update-prod-static
+    ln -s ../zulip/scripts/setup/generate-self-signed-cert zulip-generate-self-signed-cert
+    ln -s ../zulip/scripts/setup/generate_secrets.py zulip-generate-secrets
+    popd
 
-    for script in generate-self-signed-cert generate-secrets update-prod-static manage; do
-      cp $out/zulip/scripts/setup/$script $out/bin
-    done
+    runHook postInstall
   '';
 
   postFixup = ''
