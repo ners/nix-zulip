@@ -1,5 +1,6 @@
 { lib
 , runCommand
+, callPackage
 , fetchFromGitHub
 , python3
 , writeShellApplication
@@ -304,111 +305,200 @@ let
     tag = "10.4";
     hash = "sha256-sIfcxEnF8RUluPDljtNY6sU9OFZgCgG431xb8GSZRno=";
   };
+
+  zulip-server = stdenv.mkDerivation (finalAttrs: {
+    pname = "zulip-server";
+    version = "10.4";
+
+    src = src;
+
+    pnpmDeps = pnpm.fetchDeps {
+      inherit (finalAttrs) pname version src;
+      fetcherVersion = 1;
+      hash = "sha256-UAMq7wmttfr6vnLJGvaHJ3QXbwYMctTal9r3IMxPXaA=";
+    };
+
+    buildInputs = [
+      nodejs
+      pnpm.configHook
+      python-env
+
+      git
+      curl
+      jq
+      crudini
+
+      #build-essential
+      libffi # libffi-devel
+      openldap # openldap-devel
+      #python3-devel
+      #python3-pip
+      #virtualenv
+      libxml2 # libxml2-dev
+      libxslt # libxslt1-dev
+      libpq # libpq-dev
+      openssl # libssl-dev
+      file # libmagic1
+      libyaml # libyaml-dev
+      xmlsec # libxmlsec1-dev
+      pkg-config
+      cyrus_sasl # libsasl2-dev
+      vips # libvips # libvips-tools
+    ];
+
+    postPatch = ''
+      echo "def setup_path(): pass" > scripts/lib/setup_path.py
+
+      substituteInPlace scripts/setup/generate-self-signed-cert \
+        --replace-fail 'getopt' '${lib.getExe' util-linux "getopt"}' \
+        --replace-fail "apt-get install -y openssl" ":" \
+        --replace-fail 'openssl' '${lib.getExe openssl}' \
+        --replace-fail "if [ \"\$EUID\" -ne 0 ]; then" "if false; then"
+
+      substituteInPlace zproject/configured_settings.py \
+        --replace-fail "from .prod_settings import *" "import sys; sys.path.append(\"/var/lib/zulip\"); from prod_settings import *"
+
+      substituteInPlace zproject/computed_settings.py \
+        --replace-fail /srv /run/zulip \
+        --replace-fail 'zulip_path("/var/log/zulip' '(f"{os.environ.get("ZULIP_LOG_DIR", "/var/log/zulip")}' \
+        --replace-fail 'zulip_path("/home/zulip' '(f"{os.environ.get("ZULIP_STATE_DIR", "/var/lib/zulip")}'
+
+      substituteInPlace scripts/lib/zulip_tools.py \
+        --replace "args = [\"sudo\", *sudo_args, \"--\", *args]" "pass" \
+        --replace "/home" "$out/env/home"
+
+      substituteInPlace zerver/lib/compatibility.py \
+        --replace "LAST_SERVER_UPGRADE_TIME = datetime.strptime" "LAST_SERVER_UPGRADE_TIME = timezone_now() or datetime.strptime"
+
+
+      # === Patches for update-prod-static ===
+
+      substituteInPlace tools/update-prod-static \
+        --replace "sanity_check.check_venv(__file__)" "" \
+        --replace "setup_node_modules(production=True)" "" \
+        --replace 'run(["./tools/webpack", "--quiet"])' \
+                  "run([os.environ['ZULIP_TOOLS_WEBPACK_REPLACEMENT_SCRIPT'], os.environ['ZULIP_WEB']])"
+
+      substituteInPlace tools/setup/emoji/build_emoji \
+        --replace 'EMOJI_CACHE_BASE_PATH = "/srv/zulip-emoji-cache"' \
+                  "EMOJI_CACHE_BASE_PATH = os.path.join(os.environ['TMP'], 'emoji-cache')" \
+        --replace 'TARGET_STATIC_EMOJI = os.path.join(ZULIP_PATH, "static", "generated", "emoji")' \
+                  "TARGET_STATIC_EMOJI = os.path.join(os.environ['ZULIP_STATIC_GENERATED'], 'emoji')" \
+        --replace 'target_dir = os.path.join(ZULIP_PATH, "web", "generated", subdir)' \
+                  "target_dir = os.path.join(os.environ['ZULIP_WEB_GENERATED'], subdir)" \
+        --replace 'shutil.copyfile(input_img_file, output_img_file)' ""
+
+      # substituteInPlace tools/setup/generate_bots_integrations_static_files.py \
+      substituteInPlace tools/setup/generate_zulip_bots_static_files.py \
+        --replace '"static/generated' "f\"{os.environ['ZULIP_STATIC_GENERATED']}"
+
+      substituteInPlace tools/setup/build_pygments_data \
+        --replace 'OUT_PATH = os.path.join(ZULIP_PATH, "web", "generated", "pygments_data.json")' \
+                  'OUT_PATH = os.path.join(os.environ["ZULIP_WEB_GENERATED"], "pygments_data.json")'
+
+      substituteInPlace tools/setup/build_timezone_values \
+        --replace 'OUT_PATH = os.path.join(ZULIP_PATH, "web", "generated", "timezones.json")' \
+                  'OUT_PATH = os.path.join(os.environ["ZULIP_WEB_GENERATED"], "timezones.json")'
+
+      substituteInPlace tools/setup/generate_landing_page_images.py \
+        --replace 'GENERATED_IMAGES_DIR = os.path.join(LANDING_IMAGES_DIR, "generated")' \
+                  'GENERATED_IMAGES_DIR = os.environ["ZULIP_GENERATED_IMAGES_DIR"]'
+    '';
+
+    installPhase = ''
+      runHook preInstall
+
+      mkdir "$out"
+
+      cp -r . "$out"/zulip
+      chmod -R +w "$out"/zulip
+      cp -r node_modules "$out"/zulip
+
+      mkdir -p $out/env/etc/ssl/private
+      mkdir -p $out/env/etc/ssl/certs
+      mkdir -p $out/env/etc/zulip
+
+      mkdir -p "$out"/zulip/zproject/prod_settings
+
+      #mkdir -p prod-static/serve
+      #cp -rT prod-static/serve $out/env/home/zulip/prod-static
+
+      mkdir -p "$out"/bin
+      pushd "$out"/bin
+      ln -s ../zulip/manage.py zulip-manage
+      ln -s ../zulip/tools/update-prod-static zulip-update-prod-static
+      ln -s ../zulip/scripts/setup/generate-self-signed-cert zulip-generate-self-signed-cert
+      ln -s ../zulip/scripts/setup/generate_secrets.py zulip-generate-secrets
+      popd
+
+      runHook postInstall
+    '';
+
+    postFixup = ''
+      patchShebangs --build "$out/zulip"
+
+      patchShebangs --host "$out/zulip"
+
+      substituteInPlace zproject/computed_settings.py \
+        --replace "$out/env" "./env"
+    '';
+
+    passthru.static-content = zulip-static-content;
+  });
+
+  # TODO: would it be easier if this was just included in the zulip-server derivation?
+  #       How much data is it, would it be unfair to put it in the binary cache?
+  zulip-static-content = callPackage (
+    {
+      runCommandLocal,
+      zulip-server,
+      vips,
+      writeShellScript,
+      webpack-cli,
+
+      # TODO: remove
+      strace,
+    }:
+    runCommandLocal "zulip-static-content"
+      {
+        nativeBuildInputs = [ vips ];
+
+        env = {
+          DISABLE_MANDATORY_SECRET_CHECK = "True";
+
+          ZULIP_WEB = "${placeholder "out"}/web";
+          ZULIP_WEB_GENERATED = "${placeholder "out"}/web/generated";
+          ZULIP_STATIC_GENERATED = "${placeholder "out"}/static/generated";
+          ZULIP_GENERATED_IMAGES_DIR = "${placeholder "out"}/static/images/landing-page/hello/generated";
+
+          ZULIP_LOG_DIR = "/tmp";
+          ZULIP_STATE_DIR = "/tmp";
+
+          ZULIP_TOOLS_WEBPACK_REPLACEMENT_SCRIPT = writeShellScript "zulip-tools-webpack-replacement-script" ''
+            export BABEL_DISABLE_CACHE=1
+            export BROWSERSLIST_IGNORE_OLD_DATA=1
+
+            cd "$1"
+
+            ${lib.getExe webpack-cli} build ${lib.cli.toGNUCommandLineShell { } {
+              disable-interpret = true;
+              mode = "production";
+              env = "ZULIP_VERSION=${zulip-server.version}";
+              stats = "errors-only";
+            }}
+          '';
+        };
+      }
+      ''
+        # TODO: does `web,static,node_modules` need to be stored in `$out` or can we create a webpack
+        #       bundle in a tmpdir and then move it to `$out`?
+        mkdir -p "$out"
+        cp -r '${zulip-server}'/zulip/{web,static,node_modules} "$out/"
+        chmod -R +w "$out/"
+
+        # ${lib.getExe strace} -f -e trace=file '${zulip-server}'/zulip/tools/update-prod-static
+        '${zulip-server}'/zulip/tools/update-prod-static
+      ''
+  ) { inherit zulip-server; };
 in
-stdenv.mkDerivation (finalAttrs: {
-  pname = "zulip-server";
-  version = "10.4";
-
-  src = src;
-
-  pnpmDeps = pnpm.fetchDeps {
-    inherit (finalAttrs) pname version src;
-    fetcherVersion = 1;
-    hash = "sha256-UAMq7wmttfr6vnLJGvaHJ3QXbwYMctTal9r3IMxPXaA=";
-  };
-
-  buildInputs = [
-    nodejs
-    pnpm.configHook
-    python-env
-
-    git
-    curl
-    jq
-    crudini
-
-    #build-essential
-    libffi # libffi-devel
-    openldap # openldap-devel
-    #python3-devel
-    #python3-pip
-    #virtualenv
-    libxml2 #libxml2-dev
-    libxslt #libxslt1-dev
-    libpq # libpq-dev
-    openssl # libssl-dev
-    file # libmagic1
-    libyaml #libyaml-dev
-    xmlsec # libxmlsec1-dev
-    pkg-config
-    cyrus_sasl # libsasl2-dev
-    vips # libvips # libvips-tools
-  ];
-
-  postPatch = ''
-    echo "def setup_path(): pass" > scripts/lib/setup_path.py
-
-    substituteInPlace scripts/setup/generate-self-signed-cert \
-      --replace-fail 'getopt' '${lib.getExe' util-linux "getopt"}' \
-      --replace-fail "apt-get install -y openssl" ":" \
-      --replace-fail 'openssl' '${lib.getExe openssl}' \
-      --replace-fail "if [ \"\$EUID\" -ne 0 ]; then" "if false; then"
-
-    substituteInPlace zproject/configured_settings.py \
-      --replace-fail "from .prod_settings import *" "import sys; sys.path.append(\"/var/lib/zulip\"); from prod_settings import *"
-
-    substituteInPlace zproject/computed_settings.py \
-      --replace-fail "/var" "$out/env/var" \
-      --replace-fail "/home" "$out/env/home"
-
-    substituteInPlace tools/update-prod-static \
-      --replace "sanity_check.check_venv(__file__)" "" \
-      --replace "setup_node_modules(production=True)" "" \
-
-    substituteInPlace scripts/lib/zulip_tools.py \
-      --replace "args = [\"sudo\", *sudo_args, \"--\", *args]" "pass" \
-      --replace "/home" "$out/env/home"
-
-    substituteInPlace tools/setup/emoji/build_emoji \
-      --replace "/srv" "$out/env/srv"
-
-    substituteInPlace zerver/lib/compatibility.py \
-      --replace "LAST_SERVER_UPGRADE_TIME = datetime.strptime" "LAST_SERVER_UPGRADE_TIME = timezone_now() or datetime.strptime"
-  '';
-
-  installPhase = ''
-    runHook preInstall
-
-    mkdir "$out"
-
-    cp -r . "$out"/zulip
-    chmod -R +w "$out"/zulip
-    cp -r node_modules "$out"/zulip
-
-    mkdir -p $out/env/etc/ssl/private
-    mkdir -p $out/env/etc/ssl/certs
-    mkdir -p $out/env/etc/zulip
-
-    #mkdir -p prod-static/serve
-    #cp -rT prod-static/serve $out/env/home/zulip/prod-static
-
-    mkdir -p "$out"/bin
-    pushd "$out"/bin
-    ln -s ../zulip/manage.py zulip-manage
-    ln -s ../zulip/tools/update-prod-static zulip-update-prod-static
-    ln -s ../zulip/scripts/setup/generate-self-signed-cert zulip-generate-self-signed-cert
-    ln -s ../zulip/scripts/setup/generate_secrets.py zulip-generate-secrets
-    popd
-
-    runHook postInstall
-  '';
-
-  postFixup = ''
-    patchShebangs --build "$out/zulip"
-
-    patchShebangs --host "$out/zulip"
-
-    substituteInPlace zproject/computed_settings.py \
-      --replace "$out/env" "./env"
-  '';
-})
+zulip-server

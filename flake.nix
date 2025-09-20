@@ -13,6 +13,7 @@
         system: pkgs: {
           default = inputs.self.packages.${system}.zulip-server;
           zulip-server = pkgs.callPackage ./package.nix { };
+          zulip-static-content = inputs.self.packages.${system}.zulip-server.passthru.static-content;
           vm = inputs.self.nixosConfigurations.vm.config.system.build.toplevel;
         }
       );
