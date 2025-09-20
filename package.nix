@@ -359,8 +359,9 @@ let
         --replace-fail "from .prod_settings import *" "import sys; sys.path.append(\"/var/lib/zulip\"); from prod_settings import *"
 
       substituteInPlace zproject/computed_settings.py \
-        --replace-fail "/var" "$out/env/var" \
-        --replace-fail "/home" "$out/env/home"
+        --replace-fail /srv /run/zulip \
+        --replace-fail 'zulip_path("/var/log/zulip' '(f"{os.environ.get("ZULIP_LOG_DIR", "/var/log/zulip")}' \
+        --replace-fail 'zulip_path("/home/zulip' '(f"{os.environ.get("ZULIP_STATE_DIR", "/var/lib/zulip")}'
 
       substituteInPlace scripts/lib/zulip_tools.py \
         --replace "args = [\"sudo\", *sudo_args, \"--\", *args]" "pass" \
@@ -469,6 +470,9 @@ let
           ZULIP_WEB_GENERATED = "${placeholder "out"}/web/generated";
           ZULIP_STATIC_GENERATED = "${placeholder "out"}/static/generated";
           ZULIP_GENERATED_IMAGES_DIR = "${placeholder "out"}/static/images/landing-page/hello/generated";
+
+          ZULIP_LOG_DIR = "/tmp";
+          ZULIP_STATE_DIR = "/tmp";
 
           ZULIP_TOOLS_WEBPACK_REPLACEMENT_SCRIPT = writeShellScript "zulip-tools-webpack-replacement-script" ''
             export BABEL_DISABLE_CACHE=1
